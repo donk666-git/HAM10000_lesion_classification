@@ -1,0 +1,12 @@
+outputs*/
+*.pth
+*.pt
+*.ckpt
+*.onnx
+
+__pycache__/
+.ipynb_checkpoints/
+
+*.jpg
+*.jpeg
+*.png
