@@ -26,6 +26,40 @@ Deep learning/
     └── train_split.csv / val_split.csv               # 训练/验证划分记录
 ```
 
+## Pipeline
+
+```
+preprocess.ipynb        → 图像裁剪、增强质量，输出 enhanced/*.jpg
+      │
+      ▼
+train.py
+  1. 读取 metadata.csv，构建图像路径 {dx}/enhanced/{image_id}.jpg
+  2. 标签编码 → 7 类（akiec/bcc/bkl/df/mel/nv/vasc）
+  3. 元数据处理：年龄标准化 + 性别(3维)/部位(15维) one-hot → 19 维向量
+  4. 按频率倒数计算类别权重
+  5. 90/10 分层划分 → DataLoader（训练集含翻转/旋转/ColorJitter）
+      │
+      ▼
+  6. 构建模型：InceptionResNetV2(features) → Soft-Attention(16头)
+               → AdaptiveAvgPool + Metadata MLP(19→64) → 拼接 → FC(2C+64→512→7)
+      │
+      ▼
+  7. 训练循环（每轮）：
+     train → validate → ReduceLROnPlateau（按 val F1-macro）
+     → 保存 best_model.pth（F1 提升时）/ last_checkpoint.pth（每轮）
+     → 更新 early stopping 计数器（patience=7）
+      │
+      ▼
+  8. 加载最优模型 → 最终验证评估 → 输出混淆矩阵/指标/曲线/预测结果
+```
+
+### 一些设计
+
+- **γ 初始化为 0**：Attention 输出在训练初期被屏蔽，保持 backbone 稳定，逐步学习有效后再接入
+- **加权 CrossEntropyLoss**：缓解 nv:df ≈ 55:1 的类别不平衡问题
+- **ReduceLROnPlateau 按 F1-macro 调度**：相比按 loss 降 LR，更直接优化不平衡数据下的核心指标
+
+
 ## 模型架构
 
 ```
