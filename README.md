@@ -28,29 +28,45 @@ Deep learning/
 
 ## Pipeline
 
+整体架构：**InceptionResNetV2 + Soft-Attention + Metadata + Weighted Loss**，90% 训练 / 10% 验证。
+
 ```
-preprocess.ipynb        → 图像裁剪、增强质量，输出 enhanced/*.jpg
+preprocess.ipynb
+  图像裁剪、增强质量 → 输出 {dx}/enhanced/{image_id}.jpg
       │
       ▼
 train.py
-  1. 读取 metadata.csv，构建图像路径 {dx}/enhanced/{image_id}.jpg
-  2. 标签编码 → 7 类（akiec/bcc/bkl/df/mel/nv/vasc）
-  3. 元数据处理：年龄标准化 + 性别(3维)/部位(15维) one-hot → 19 维向量
-  4. 按频率倒数计算类别权重
-  5. 90/10 分层划分 → DataLoader（训练集含翻转/旋转/ColorJitter）
-      │
-      ▼
-  6. 构建模型：InceptionResNetV2(features) → Soft-Attention(16头)
-               → AdaptiveAvgPool + Metadata MLP(19→64) → 拼接 → FC(2C+64→512→7)
-      │
-      ▼
-  7. 训练循环（每轮）：
-     train → validate → ReduceLROnPlateau（按 val F1-macro）
-     → 保存 best_model.pth（F1 提升时）/ last_checkpoint.pth（每轮）
-     → 更新 early stopping 计数器（patience=7）
-      │
-      ▼
-  8. 加载最优模型 → 最终验证评估 → 输出混淆矩阵/指标/曲线/预测结果
+  │
+  ├── 数据准备
+  │   [1] 读取 metadata.csv
+  │   [2] 构建 enhanced 图像路径，检查缺失
+  │   [3] 标签编码 → 7 类
+  │   [4] 元数据处理：年龄标准化 + 性别/部位 one-hot → 19 维向量
+  │   [5] 按频率倒数计算类别权重
+  │   [6] 90/10 分层划分 → DataLoader
+  │
+  ├── 模型构建
+  │   [7] InceptionResNetV2(features-only, ImageNet 预训练)
+  │       + Soft-Attention(16头, γ=0 初始化)
+  │       + Metadata MLP(19→64)
+  │       → 拼接 → FC(2C+64 → 512 → 7)
+  │
+  ├── 验证单轮
+  │   [8] forward/backward 各跑 1 epoch，确认无报错
+  │
+  ├── 正式训练
+  │   [9] 最多 30 epochs
+  │       · 每轮：train → validate → ReduceLROnPlateau（按 val F1-macro）
+  │       · F1 提升 → 保存 best_model.pth
+  │       · 每轮   → 保存 last_checkpoint.pth（含 optimizer/scheduler）
+  │       · patience=7 无提升 → early stopping
+  │
+  └── 最终输出
+      [10] 加载最优模型 → 全量评估
+            → metrics.csv / confusion_matrix.png
+            → per_class_metrics.csv / predictions.csv
+            → loss_curve.png / metric_curve.png
+            → training_history.csv
 ```
 
 ### 一些设计
